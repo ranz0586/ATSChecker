@@ -1,4 +1,3 @@
-import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { Writable } from 'node:stream';
@@ -14,6 +13,7 @@ export async function extractResume(buffer, filename) {
   let pages = null;
   if (extension === 'pdf') {
     if (!buffer.subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw new Error('This file is not a valid PDF.');
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: buffer });
     try {
       const result = await parser.getText();

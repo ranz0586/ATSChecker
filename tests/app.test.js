@@ -6,6 +6,7 @@ import { createApp } from '../server/index.js';
 import { reviewWithAI, getAIConfig } from '../server/ai.js';
 import JSZip from 'jszip';
 import vercelApp from '../api/index.js';
+import { execFileSync } from 'node:child_process';
 
 const resume = `Alex Morgan\nalex@example.com\n\nWork Experience\nEngineer | Example | 2022–2025\nBuilt React and Node.js applications for 500 users. Improved performance by 30%. Delivered accessible interfaces using HTML and CSS.\n\nTechnical Skills\nReact, Node.js, JavaScript, HTML, CSS, Git\n\nEducation\nBS Computer Science, Example University 2022\n${'Worked with designers and engineers to deliver customer dashboards. '.repeat(14)}`.trim();
 const job = 'Frontend engineer required to build React applications with TypeScript, Node.js, HTML, CSS and Git. Must work with designers to improve accessibility and deliver customer dashboards.';
@@ -74,6 +75,28 @@ function makePDF(text) {
   pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(n => `${String(n).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Buffer.from(pdf);
 }
+
+test('API startup does not require native PDF rendering dependencies', () => {
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', `
+    const builtin = process.getBuiltinModule;
+    process.getBuiltinModule = name => {
+      const module = builtin(name);
+      if (name !== 'module') return module;
+      return { ...module, createRequire: url => {
+        const original = module.createRequire(url);
+        return Object.assign(id => {
+          if (id === '@napi-rs/canvas') throw Error('native canvas unavailable');
+          return original(id);
+        }, original);
+      } };
+    };
+    await import('./api/index.js');
+    const { extractResume } = await import('./server/files.js');
+    await extractResume(Buffer.from('Synthetic resume text. '.repeat(10)), 'resume.txt');
+    console.log('ready');
+  `], { encoding: 'utf8' });
+  assert.match(output, /ready/);
+});
 
 test('a real selectable-text PDF extracts successfully', async () => {
   const result = await extractResume(makePDF('Alex Morgan alex@example.com Built React applications for 500 users. Skills: React JavaScript HTML CSS. Education: Computer Science.'), 'resume.pdf');

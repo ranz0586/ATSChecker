@@ -5,6 +5,7 @@ import { createDocx, extractResume } from '../server/files.js';
 import { createApp } from '../server/index.js';
 import { reviewWithAI, getAIConfig } from '../server/ai.js';
 import JSZip from 'jszip';
+import vercelApp from '../api/index.js';
 
 const resume = `Alex Morgan\nalex@example.com\n\nWork Experience\nEngineer | Example | 2022–2025\nBuilt React and Node.js applications for 500 users. Improved performance by 30%. Delivered accessible interfaces using HTML and CSS.\n\nTechnical Skills\nReact, Node.js, JavaScript, HTML, CSS, Git\n\nEducation\nBS Computer Science, Example University 2022\n${'Worked with designers and engineers to deliver customer dashboards. '.repeat(14)}`.trim();
 const job = 'Frontend engineer required to build React applications with TypeScript, Node.js, HTML, CSS and Git. Must work with designers to improve accessibility and deliver customer dashboards.';
@@ -200,6 +201,40 @@ test('invalid AI configuration disables AI without breaking local analysis', asy
   const post = useAI => fetch(`${base}/api/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resume, jobDescription: job, useAI, aiConsent: true }) });
   assert.equal((await post(false)).status, 200);
   assert.equal((await post(true)).status, 503);
+});
+
+test('private Vercel API rejects missing credentials, enforces proxy origins and limits AI attempts', async t => {
+  const password = 'synthetic-app-password-for-tests';
+  const headers = { Authorization: `Basic ${Buffer.from(`align:${password}`).toString('base64')}`, 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' };
+  let calls = 0;
+  const app = createApp({ env: { VERCEL: '1', APP_PASSWORD: password, AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'mock-key' }, fetchImpl: async () => { calls++; return { ok: false, status: 500 }; } });
+  const server = app.listen(0, '127.0.0.1');
+  const unconfigured = vercelApp.listen(0, '127.0.0.1');
+  await Promise.all([server, unconfigured].map(s => new Promise(resolve => s.once('listening', resolve))));
+  t.after(() => Promise.all([server, unconfigured].map(s => new Promise(resolve => s.close(resolve)))));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  assert.equal((await fetch(`http://127.0.0.1:${unconfigured.address().port}/api/config`)).status, 503);
+  const unauthenticated = await fetch(`${base}/api/config`);
+  assert.equal(unauthenticated.status, 401);
+  assert.match(unauthenticated.headers.get('www-authenticate'), /Basic/);
+  assert.equal((await fetch(`${base}/api/config`, { headers: { Authorization: 'Basic wrong' } })).status, 401);
+  const config = await fetch(`${base}/api/config`, { headers });
+  assert.equal(config.status, 200);
+  const text = await config.text();
+  assert.equal(text.includes(password) || text.includes('mock-key'), false);
+  const post = (useAI = true, origin = `https://127.0.0.1:${server.address().port}`) => fetch(`${base}/api/analyze`, { method: 'POST', headers: { ...headers, Origin: origin }, body: JSON.stringify({ resume, jobDescription: job, useAI, aiConsent: useAI, aiProvider: 'gemini' }) });
+  assert.equal((await post(true, 'https://untrusted.example')).status, 403);
+  assert.equal(calls, 0);
+  for (let i = 0; i < 10; i++) {
+    const result = await post();
+    assert.equal(result.status, 200);
+    assert.match((await result.json()).aiError, /could not be completed/);
+  }
+  assert.equal((await post()).status, 429);
+  assert.equal(calls, 10);
+  assert.equal((await post(false)).status, 200);
+  assert.equal((await fetch(`${base}/api/extract`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/octet-stream', 'X-File-Name': 'resume.txt' }, body: resume })).status, 200);
+  assert.equal((await fetch(`${base}/api/export`, { method: 'POST', headers, body: JSON.stringify({ text: resume }) })).status, 200);
 });
 
 test('API completes upload, review and DOCX download, and rejects invalid requests', async t => {

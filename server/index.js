@@ -1,4 +1,5 @@
 import express from 'express';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,12 +12,24 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   try { aiConfig = getAIConfig(env); }
   catch (error) { aiConfig = { error: error.message }; }
   const app = express();
+  const hosted = env.VERCEL === '1';
+  if (hosted) app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin' });
     if (req.method === 'POST' && req.headers.origin && req.headers.origin !== `${req.protocol}://${req.get('host')}`) return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
     next();
   });
+  if (hosted) {
+    const password = env.APP_PASSWORD || '';
+    const expected = createHash('sha256').update(`Basic ${Buffer.from(`align:${password}`).toString('base64')}`).digest();
+    app.use((req, res, next) => {
+      if (password.length < 24) return res.status(503).json({ error: 'Set APP_PASSWORD to a unique password of at least 24 characters in Vercel and redeploy.' });
+      const supplied = createHash('sha256').update(req.get('authorization') || '').digest();
+      if (!timingSafeEqual(expected, supplied)) return res.set('WWW-Authenticate', 'Basic realm="Align", charset="UTF-8"').status(401).json({ error: 'Sign in at /api/config with username align and your app password, then reopen the app.' });
+      next();
+    });
+  }
   app.get('/api/config', (req, res) => res.json({ aiAvailable: Boolean(aiConfig.apiKey), aiProvider: aiConfig.provider || null,
     aiProviderLabel: aiConfig.label || null, aiConfigError: aiConfig.error || null, maxFileSize: 5 * 1024 * 1024 }));
   app.post('/api/extract', express.raw({ type: 'application/octet-stream', limit: '5mb' }), async (req, res) => {
@@ -27,6 +40,8 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   });
   app.use(express.json({ limit: '160kb' }));
   let aiBusy = false;
+  let aiRequests = 0;
+  let aiWindowStart = Date.now();
   app.post('/api/analyze', async (req, res) => {
     const { resume, jobDescription, requirements = '', useAI = false, aiConsent = false, aiProvider } = req.body || {};
     try { validateInputs(resume, jobDescription, requirements); }
@@ -36,6 +51,12 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     if (useAI && !aiConfig.apiKey) return res.status(503).json({ error: aiConfig.error || 'AI review is not configured. Set a key for the selected provider on the server or use the local review.' });
     if (useAI && aiProvider !== aiConfig.provider) return res.status(400).json({ error: 'The AI provider has changed or was not confirmed. Reload the page and enable AI review again before sending documents.' });
     if (useAI && aiBusy) return res.status(429).json({ error: 'An AI review is already running. Please try again shortly.' });
+    if (hosted && useAI) {
+      // shortcut: 10 AI attempts/hour per instance; use an edge/provider quota for a limit shared across instances.
+      if (Date.now() - aiWindowStart >= 3600000) { aiWindowStart = Date.now(); aiRequests = 0; }
+      if (aiRequests >= 10) return res.status(429).json({ error: 'The AI request limit was reached. Use local review or try again in an hour.' });
+      aiRequests++;
+    }
     const original = analyze(resume, jobDescription, requirements);
     let ai = null;
     let aiError = null;

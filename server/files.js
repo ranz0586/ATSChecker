@@ -4,6 +4,7 @@ import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { MAX_TEXT } from '../shared/analysis.js';
+import { getResumeFormat } from '../shared/resume-format.js';
 
 export async function extractResume(buffer, filename) {
   if (!Buffer.isBuffer(buffer) || !buffer.length) throw new Error('Choose a non-empty resume file.');
@@ -43,8 +44,10 @@ export async function extractResume(buffer, filename) {
   return { text, pages };
 }
 
-export async function createDocx(text) {
-  const sections = [{ children: text.split('\n').map(line => new Paragraph({
+export async function createDocx(text, targetCountry = 'international') {
+  const format = getResumeFormat(targetCountry);
+  const size = format.paper === 'Letter' ? { width: 12240, height: 15840 } : { width: 11906, height: 16838 };
+  const sections = [{ properties: { page: { size } }, children: text.split('\n').map(line => new Paragraph({
     spacing: { after: line.trim() ? 90 : 60 },
     children: [new TextRun({ text: line, font: 'Calibri', size: 22, bold: /^[A-Z][A-Z &/]{2,}$/.test(line.trim()) })],
   })) }];

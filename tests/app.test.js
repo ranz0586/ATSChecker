@@ -7,6 +7,7 @@ import { reviewWithAI, getAIConfig } from '../server/ai.js';
 import JSZip from 'jszip';
 import vercelApp from '../api/index.js';
 import { execFileSync } from 'node:child_process';
+import { detectJobCountry, resolveResumeCountry } from '../shared/resume-format.js';
 
 const resume = `Alex Morgan\nalex@example.com\n\nWork Experience\nEngineer | Example | 2022–2025\nBuilt React and Node.js applications for 500 users. Improved performance by 30%. Delivered accessible interfaces using HTML and CSS.\n\nTechnical Skills\nReact, Node.js, JavaScript, HTML, CSS, Git\n\nEducation\nBS Computer Science, Example University 2022\n${'Worked with designers and engineers to deliver customer dashboards. '.repeat(14)}`.trim();
 const job = 'Frontend engineer required to build React applications with TypeScript, Node.js, HTML, CSS and Git. Must work with designers to improve accessibility and deliver customer dashboards.';
@@ -34,6 +35,15 @@ test('scores reflect missing requirements and never invent qualifications', () =
   assert.equal(cleanResume(revised), revised);
 });
 
+test('country suggestions require one explicit country and respect manual overrides', () => {
+  assert.equal(detectJobCountry('Frontend Engineer based in New\nZealand'), 'NZ');
+  assert.equal(resolveResumeCountry('auto', 'Work in New Zealand'), 'NZ');
+  assert.equal(resolveResumeCountry('US', 'Work in New Zealand'), 'US');
+  assert.equal(resolveResumeCountry('auto', 'Offices in New Zealand and Singapore'), 'international');
+  assert.equal(resolveResumeCountry('auto', 'Office in Auckland'), 'international');
+  for (const value of ['__proto__', 'unknown', null, [], 123]) assert.throws(() => resolveResumeCountry(value), /target country/);
+});
+
 test('text boundaries reject invalid input', () => {
   assert.throws(() => validateInputs('', job), /at least/);
   assert.throws(() => validateInputs(resume, 'x'.repeat(30001)), /fewer/);
@@ -48,6 +58,16 @@ test('DOCX export preserves facts and can be uploaded again', async () => {
   assert.match(result.text, /2022–2025/);
   assert.equal(contains(result.text, 'React'), true);
   assert.equal(contains(result.text, 'TypeScript'), false);
+});
+
+test('country exports use A4 or Letter without modifying resume facts', async () => {
+  for (const [country, width, height] of [['NZ', 11906, 16838], ['US', 12240, 15840], ['CA', 12240, 15840]]) {
+    const buffer = await createDocx(resume, country);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+    assert.match(xml, new RegExp(`w:pgSz[^>]*w:w="${width}"[^>]*w:h="${height}"`));
+    assert.equal(contains((await extractResume(buffer, 'resume.docx')).text, 'TypeScript'), false);
+  }
 });
 
 test('uploads reject unsupported, malformed, oversized, scanned and binary documents', async () => {
@@ -114,9 +134,11 @@ test('AI request uses consented data, structured output and no response storage'
     assert.equal(body.text.format.strict, true);
     assert.equal(JSON.parse(body.input).resume, resume);
     assert.match(body.instructions, /Never invent/);
+    assert.match(body.instructions, /New Zealand English/);
+    assert.equal(JSON.parse(body.input).targetCountry, 'NZ');
     return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(expected) }] }] }) };
   };
-  assert.deepEqual(await reviewWithAI({ resume, jobDescription: job, requirements: '' }, { apiKey: 'test-key', fetchImpl: mock }), expected);
+  assert.deepEqual(await reviewWithAI({ resume, jobDescription: job, requirements: '', targetCountry: 'NZ' }, { apiKey: 'test-key', fetchImpl: mock }), expected);
   await assert.rejects(() => reviewWithAI({ resume, jobDescription: job }, { apiKey: '', fetchImpl: mock }), /not configured/);
   await assert.rejects(() => reviewWithAI({ resume, jobDescription: job }, { apiKey: 'test-key', fetchImpl: async () => ({ ok: false, status: 429 }) }), /usage limit/);
   await assert.rejects(() => reviewWithAI({ resume, jobDescription: job }, { apiKey: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: '{}' }] }] }) }) }), /invalid review/);
@@ -148,11 +170,14 @@ test('Gemini uses its endpoint, bearer key, shared schema and resume instruction
     assert.equal(body.response_format.json_schema.strict, true);
     assert.equal(body.response_format.json_schema.schema.additionalProperties, false);
     assert.match(body.messages[0].content, /Never invent/);
+    assert.match(body.messages[0].content, /New Zealand English/);
+    assert.match(body.messages[0].content, /Do not add unsupported terms to reach a target score/);
+    assert.equal(JSON.parse(body.messages[1].content).targetCountry, 'NZ');
     assert.equal(JSON.parse(body.messages[1].content).resume, resume);
     assert.equal('store' in body, false);
     return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(expected) } }] }) };
   };
-  assert.deepEqual(await reviewWithAI({ resume, jobDescription: job }, { provider: 'gemini', apiKey: 'gemini-test-key', model: 'gemini-custom', fetchImpl: mock }), expected);
+  assert.deepEqual(await reviewWithAI({ resume, jobDescription: job, targetCountry: 'NZ' }, { provider: 'gemini', apiKey: 'gemini-test-key', model: 'gemini-custom', fetchImpl: mock }), expected);
   for (const [data, message] of [
     [{ choices: [{ finish_reason: 'length', message: { content: JSON.stringify(expected) } }] }, /did not finish/],
     [{ choices: [{ finish_reason: 'content_filter', message: {} }] }, /declined/],
@@ -268,6 +293,10 @@ test('API completes upload, review and DOCX download, and rejects invalid reques
   assert.equal(reviewed.status, 200);
   const data = await reviewed.json();
   assert.equal(data.ai, null);
+  const countryResult = await (await fetch(`${base}/api/analyze`, json({ resume, jobDescription: `${job} Based in New Zealand.` }))).json();
+  assert.equal(countryResult.targetCountry, 'NZ');
+  assert.equal((await fetch(`${base}/api/analyze`, json({ resume, jobDescription: job, targetCountry: '__proto__' }))).status, 400);
+  assert.equal((await fetch(`${base}/api/export`, json({ text: resume, targetCountry: [] }))).status, 400);
   assert.equal(contains(data.revisedResume, 'TypeScript'), false);
   const exported = await fetch(`${base}/api/export`, json({ text: data.revisedResume }));
   assert.equal(exported.status, 200);

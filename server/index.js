@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { analyze, cleanResume, validateInputs, MAX_TEXT } from '../shared/analysis.js';
 import { extractResume, createDocx } from './files.js';
 import { reviewWithAI, getAIConfig } from './ai.js';
+import { resolveResumeCountry } from '../shared/resume-format.js';
 
 export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   let aiConfig;
@@ -32,8 +33,9 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   let aiRequests = 0;
   let aiWindowStart = Date.now();
   app.post('/api/analyze', async (req, res) => {
-    const { resume, jobDescription, requirements = '', useAI = false, aiConsent = false, aiProvider } = req.body || {};
-    try { validateInputs(resume, jobDescription, requirements); }
+    const { resume, jobDescription, requirements = '', targetCountry = 'auto', useAI = false, aiConsent = false, aiProvider } = req.body || {};
+    let country;
+    try { validateInputs(resume, jobDescription, requirements); country = resolveResumeCountry(targetCountry, jobDescription); }
     catch (error) { return res.status(400).json({ error: error.message }); }
     if (typeof useAI !== 'boolean' || typeof aiConsent !== 'boolean') return res.status(400).json({ error: 'AI options must be true or false.' });
     if (useAI && !aiConsent) return res.status(400).json({ error: 'Consent is required before sending your documents for AI review.' });
@@ -52,23 +54,27 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     if (useAI) {
       // ponytail: one AI request at a time on this local server; add per-user quotas when deploying for multiple users.
       aiBusy = true;
-      try { ai = await reviewWithAI({ resume, jobDescription, requirements }, { ...aiConfig, fetchImpl }); }
+      try { ai = await reviewWithAI({ resume, jobDescription, requirements, targetCountry: country }, { ...aiConfig, fetchImpl }); }
       catch (error) { aiError = error.name === 'TimeoutError' ? 'AI review timed out. Local results are still available.' : error.message; }
       finally { aiBusy = false; }
     }
     const revisedResume = ai?.revisedResume || cleanResume(resume);
-    res.json({ original, revised: analyze(revisedResume, jobDescription, requirements), revisedResume, ai, aiError,
+    res.json({ original, revised: analyze(revisedResume, jobDescription, requirements), revisedResume, ai, aiError, targetCountry: country,
       aiProvider: ai ? aiConfig.provider : null, aiProviderLabel: ai ? aiConfig.label : null,
       changes: ai?.changes || ['Standardized recognized section headings, bullets, and whitespace. Original qualifications and accomplishments were preserved.'],
     });
   });
   app.post('/api/export', async (req, res) => {
     const text = req.body?.text;
+    const { targetCountry = 'international' } = req.body || {};
+    let country;
+    try { country = resolveResumeCountry(targetCountry); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
     if (typeof text !== 'string' || text.trim().length < 80 || text.length > MAX_TEXT) return res.status(400).json({ error: 'Resume must contain 80–30,000 characters.' });
     try {
       res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       res.set('Content-Disposition', 'attachment; filename="aligned-resume.docx"');
-      res.send(await createDocx(text));
+      res.send(await createDocx(text, country));
     } catch { res.status(500).json({ error: 'Could not export the resume. Try downloading TXT instead.' }); }
   });
   app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint not found.' }));

@@ -58,6 +58,14 @@ These are transparent heuristics, not a company ATS simulator, pass probability,
 
 Local cleanup standardizes recognized headings, bullet characters, and whitespace without inserting missing skills or achievements. AI is instructed to preserve factual information, identify unsupported requirements, and avoid inventing qualifications. Users can edit the revision, rerun the local score, and download a single-column DOCX or TXT resume. Original and revised scores use the same job description.
 
+## Country formatting and revised scores
+
+Choose **Job country / resume format** before analyzing. The default suggests a country only when the job description contains exactly one supported country's full name. Multiple countries, abbreviations, city-only locations and unsupported countries fall back to International / other; select the job's actual country manually. A mention may refer to a headquarters rather than the job location, so verify the suggestion. Changing this selection invalidates the previous report.
+
+New Zealand and other A4 profiles export an A4 DOCX; United States and Canada use Letter. AI adapts new prose to the selected English spelling convention and uses unambiguous dates where supported. It preserves names, official titles, phone numbers, currencies and locations rather than guessing nationality, work rights or a telephone country code. Local cleanup does not translate or rewrite prose; without AI, the country setting controls DOCX page size only. TXT exports have no paper size. These are app formatting defaults, not universal employer requirements. Review employer instructions and [New Zealand's CV guidance](https://tahatu.govt.nz/work/applying-for-a-job/how-to-write-a-cv).
+
+**Overview shows the original resume's local score. Refined resume shows the revised score**, its component scores, and remaining suggestions. The provider's fit estimate also evaluates the original resume against the role; rechecking an edited draft updates the local score only. For example, 65% keyword alignment with full structure and impact scores gives an overall score of 77. Formatting alone cannot fix unsupported or absent qualifications. AI is asked to use exact job terminology where existing facts support it, without inventing skills to hit 80–90. Country selection itself adds no score bonus; the 65/25/10 weights are unchanged.
+
 ## Privacy and deployment
 
 The app processes uploads and documents in memory and has no database, analytics, document logging, or browser persistence. Documents are lost when the page is refreshed. Optional AI requests send documents only to the selected provider and are subject to that provider's data policies. OpenAI requests use `store: false`; this does not promise zero provider retention. Gemini uses Google's own data policies; OpenAI's storage flag does not apply to its API.

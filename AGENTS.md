@@ -9,6 +9,7 @@ Align is a local React application that compares a resume with a job description
 | `src/main.jsx` | React workflow, uploads, reports, editing, and downloads |
 | `src/styles.css` | Styling and responsive layouts |
 | `shared/analysis.js` | Input validation, keyword matching, scoring, and conservative cleanup; shared by browser and server |
+| `shared/resume-format.js` | Country suggestions, validated format profiles, English spelling conventions and page-size selection |
 | `server/index.js` | Express API, request limits, AI consent, fallback, and app startup |
 | `server/files.js` | PDF/DOCX/TXT extraction, archive limits, and DOCX generation |
 | `server/ai.js` | Provider configuration, OpenAI Responses/Gemini Chat Completions requests, shared output validation, and error handling |

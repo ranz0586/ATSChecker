@@ -226,25 +226,20 @@ test('invalid AI configuration disables AI without breaking local analysis', asy
   assert.equal((await post(true)).status, 503);
 });
 
-test('private Vercel API rejects missing credentials, enforces proxy origins and limits AI attempts', async t => {
-  const password = 'synthetic-app-password-for-tests';
-  const headers = { Authorization: `Basic ${Buffer.from(`align:${password}`).toString('base64')}`, 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' };
+test('Vercel API works without a password, enforces proxy origins and limits AI attempts', async t => {
+  const headers = { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' };
   let calls = 0;
-  const app = createApp({ env: { VERCEL: '1', APP_PASSWORD: password, AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'mock-key' }, fetchImpl: async () => { calls++; return { ok: false, status: 500 }; } });
+  const app = createApp({ env: { VERCEL: '1', AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'mock-key' }, fetchImpl: async () => { calls++; return { ok: false, status: 500 }; } });
   const server = app.listen(0, '127.0.0.1');
   const unconfigured = vercelApp.listen(0, '127.0.0.1');
   await Promise.all([server, unconfigured].map(s => new Promise(resolve => s.once('listening', resolve))));
   t.after(() => Promise.all([server, unconfigured].map(s => new Promise(resolve => s.close(resolve)))));
   const base = `http://127.0.0.1:${server.address().port}`;
-  assert.equal((await fetch(`http://127.0.0.1:${unconfigured.address().port}/api/config`)).status, 503);
-  const unauthenticated = await fetch(`${base}/api/config`);
-  assert.equal(unauthenticated.status, 401);
-  assert.match(unauthenticated.headers.get('www-authenticate'), /Basic/);
-  assert.equal((await fetch(`${base}/api/config`, { headers: { Authorization: 'Basic wrong' } })).status, 401);
+  assert.equal((await fetch(`http://127.0.0.1:${unconfigured.address().port}/api/config`)).status, 200);
   const config = await fetch(`${base}/api/config`, { headers });
   assert.equal(config.status, 200);
   const text = await config.text();
-  assert.equal(text.includes(password) || text.includes('mock-key'), false);
+  assert.equal(text.includes('mock-key'), false);
   const post = (useAI = true, origin = `https://127.0.0.1:${server.address().port}`) => fetch(`${base}/api/analyze`, { method: 'POST', headers: { ...headers, Origin: origin }, body: JSON.stringify({ resume, jobDescription: job, useAI, aiConsent: useAI, aiProvider: 'gemini' }) });
   assert.equal((await post(true, 'https://untrusted.example')).status, 403);
   assert.equal(calls, 0);

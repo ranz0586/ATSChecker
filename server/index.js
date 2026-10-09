@@ -1,5 +1,4 @@
 import express from 'express';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,16 +19,6 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     if (req.method === 'POST' && req.headers.origin && req.headers.origin !== `${req.protocol}://${req.get('host')}`) return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
     next();
   });
-  if (hosted) {
-    const password = env.APP_PASSWORD || '';
-    const expected = createHash('sha256').update(`Basic ${Buffer.from(`align:${password}`).toString('base64')}`).digest();
-    app.use((req, res, next) => {
-      if (password.length < 24) return res.status(503).json({ error: 'Set APP_PASSWORD to a unique password of at least 24 characters in Vercel and redeploy.' });
-      const supplied = createHash('sha256').update(req.get('authorization') || '').digest();
-      if (!timingSafeEqual(expected, supplied)) return res.set('WWW-Authenticate', 'Basic realm="Align", charset="UTF-8"').status(401).json({ error: 'Sign in at /api/config with username align and your app password, then reopen the app.' });
-      next();
-    });
-  }
   app.get('/api/config', (req, res) => res.json({ aiAvailable: Boolean(aiConfig.apiKey), aiProvider: aiConfig.provider || null,
     aiProviderLabel: aiConfig.label || null, aiConfigError: aiConfig.error || null, maxFileSize: 5 * 1024 * 1024 }));
   app.post('/api/extract', express.raw({ type: 'application/octet-stream', limit: '5mb' }), async (req, res) => {

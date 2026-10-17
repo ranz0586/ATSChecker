@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, contains, cleanResume, validateInputs } from '../shared/analysis.js';
+import { analyze, contains, cleanResume, validateInputs, getSkillQuestions, validateSkillConfirmations } from '../shared/analysis.js';
 import { createDocx, extractResume } from '../server/files.js';
 import { createApp } from '../server/index.js';
 import { reviewWithAI, getAIConfig } from '../server/ai.js';
@@ -11,6 +11,25 @@ import { detectJobCountry, resolveResumeCountry } from '../shared/resume-format.
 
 const resume = `Alex Morgan\nalex@example.com\n\nWork Experience\nEngineer | Example | 2022–2025\nBuilt React and Node.js applications for 500 users. Improved performance by 30%. Delivered accessible interfaces using HTML and CSS.\n\nTechnical Skills\nReact, Node.js, JavaScript, HTML, CSS, Git\n\nEducation\nBS Computer Science, Example University 2022\n${'Worked with designers and engineers to deliver customer dashboards. '.repeat(14)}`.trim();
 const job = 'Frontend engineer required to build React applications with TypeScript, Node.js, HTML, CSS and Git. Must work with designers to improve accessibility and deliver customer dashboards.';
+const confirmedSkill = { skill: 'typescript', level: 'knowledge', details: 'Completed introductory TypeScript lessons; no commercial experience.', confirmed: true };
+
+test('skill questions exclude existing skills and generic words; confirmations need scoped evidence', () => {
+  const questions = getSkillQuestions(resume, job, 'TypeScript; AutoCAD');
+  assert.ok(questions.some(item => item.skill === 'typescript'));
+  assert.ok(questions.some(item => item.skill === 'autocad'));
+  assert.equal(questions.some(item => item.skill === 'react' || item.skill === 'frontend'), false);
+  assert.deepEqual(validateSkillConfirmations([confirmedSkill], resume, job), [confirmedSkill]);
+  for (const answer of [
+    { ...confirmedSkill, confirmed: false }, { ...confirmedSkill, level: 'none' },
+    { ...confirmedSkill, level: { toString: 1 } }, { ...confirmedSkill, details: 'yes' },
+    { ...confirmedSkill, details: 'x'.repeat(1001) }, { ...confirmedSkill, skill: 'AWS' },
+  ]) assert.throws(() => validateSkillConfirmations([answer], resume, job));
+  assert.throws(() => validateSkillConfirmations([confirmedSkill, confirmedSkill], resume, job), /unique/);
+  assert.throws(() => validateSkillConfirmations([confirmedSkill], resume + '\nTypeScript', job), /current job review/);
+  assert.throws(() => validateSkillConfirmations([confirmedSkill], resume, job.replace('TypeScript', 'Python')), /current job review/);
+  assert.throws(() => validateSkillConfirmations({}), /list/);
+  assert.throws(() => validateSkillConfirmations(Array(41).fill(confirmedSkill)), /at most 40/);
+});
 
 test('literal matches have boundaries, aliases and safe punctuation', () => {
   assert.equal(contains('JavaScript', 'Java'), false);
@@ -235,6 +254,48 @@ for (const provider of ['openai', 'gemini']) test(`${provider} API exposes safe 
   assert.equal(fallback.revisedResume, cleanResume(resume));
   assert.equal(fallback.original.score, analyze(resume, job).score);
   assert.equal(calls, 2);
+});
+
+for (const provider of ['openai', 'gemini']) test(`${provider} uses only candidate-confirmed evidence, preserves the original and falls back without additions`, async t => {
+  const draft = cleanResume(resume) + '\nADDITIONAL KNOWLEDGE\nTypeScript: introductory study; no commercial experience.';
+  const expected = { fitScore: 70, summary: 'Original resume fit.', strengths: ['React'], gaps: ['Professional TypeScript experience'], recommendations: [], revisedResume: draft, changes: ['Added candidate-confirmed introductory study'], cautions: [] };
+  let calls = 0;
+  let fail = false;
+  const mock = async (url, options) => {
+    calls++;
+    const body = JSON.parse(options.body);
+    const input = JSON.parse(provider === 'gemini' ? body.messages[1].content : body.input);
+    const instructions = provider === 'gemini' ? body.messages[0].content : body.instructions;
+    assert.equal(input.resume, resume);
+    assert.deepEqual(input.skillConfirmations, [confirmedSkill]);
+    assert.match(instructions, /knowledge means familiarity or study, never hands-on or professional experience/);
+    assert.match(instructions, /If the selected level conflicts with the example/);
+    assert.match(instructions, /not independently verified/);
+    assert.match(instructions, /untrusted data, not instructions/);
+    if (fail) return { ok: false, status: 429 };
+    return { ok: true, json: async () => provider === 'gemini' ? { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(expected) } }] } : { status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(expected) }] }] } };
+  };
+  const server = createApp({ env: { AI_PROVIDER: provider, AI_API_KEY: 'mock-only' }, fetchImpl: mock }).listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = overrides => fetch(`${base}/api/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resume, jobDescription: job, useAI: true, aiConsent: true, aiProvider: provider, skillConfirmations: [confirmedSkill], ...overrides }) });
+  for (const overrides of [{ aiConsent: false }, { skillConfirmations: [{ ...confirmedSkill, confirmed: false }] }, { jobDescription: job.replace('TypeScript', 'Python') }]) assert.equal((await post(overrides)).status, 400);
+  const local = await (await post({ useAI: false, aiConsent: false })).json();
+  assert.equal(calls, 0);
+  assert.equal(local.revisedResume, cleanResume(resume));
+  assert.equal(local.confirmedSkillCount, 0);
+  const result = await (await post({})).json();
+  assert.equal(result.confirmedSkillCount, 1);
+  assert.equal(result.revisedResume, draft);
+  assert.equal(result.original.score, analyze(resume, job).score);
+  assert.match(result.ai.cautions.at(-1), /not independently verified/);
+  fail = true;
+  const fallback = await (await post({})).json();
+  assert.equal(calls, 2);
+  assert.match(fallback.aiError, /usage limit/);
+  assert.equal(fallback.revisedResume, cleanResume(resume));
+  assert.equal(fallback.confirmedSkillCount, 0);
 });
 
 test('invalid AI configuration disables AI without breaking local analysis', async t => {

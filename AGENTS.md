@@ -8,7 +8,7 @@ Align is a local React application that compares a resume with a job description
 | --- | --- |
 | `src/main.jsx` | React workflow, uploads, reports, editing, and downloads |
 | `src/styles.css` | Styling and responsive layouts |
-| `shared/analysis.js` | Input validation, keyword matching, scoring, and conservative cleanup; shared by browser and server |
+| `shared/analysis.js` | Input validation, keyword matching, missing-skill questions, candidate-statement validation, scoring, and conservative cleanup; shared by browser and server |
 | `shared/resume-format.js` | Country suggestions, validated format profiles, English spelling conventions and page-size selection |
 | `server/index.js` | Express API, request limits, AI consent, fallback, and app startup |
 | `server/files.js` | PDF/DOCX/TXT extraction, archive limits, and DOCX generation |
@@ -53,6 +53,7 @@ npm start
 - Current local weights are 65% keyword alignment, 25% text structure, and 10% impact signals. Explicit requirements have double keyword weight. Keep implementation, UI explanations, tests, and README consistent if these change.
 - Local cleanup only standardizes recognized headings, bullets, and whitespace. Never insert missing skills, invented metrics, credentials, employers, dates, or accomplishments.
 - AI rewriting must preserve supported facts, identify gaps separately, and require users to review the draft. Prompt instructions do not guarantee factual accuracy.
+- Candidate-confirmed skill statements are self-reported, not independently verified. Require a stated level, concrete example and explicit confirmation. Preserve knowledge/practice/professional distinctions; keep statements separate from the original resume and never apply them through local cleanup or AI failure fallback.
 - Compare original and revised text against the same job description and requirements. Clearly mark scores that have not yet been updated after editing.
 - Keep exports selectable, single-column text. Supported inputs are text-based PDF, DOCX, and UTF-8 TXT; scanned PDFs need external OCR.
 

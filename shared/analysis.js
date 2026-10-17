@@ -1,5 +1,10 @@
 export const MAX_TEXT = 30000;
 export const MIN_TEXT = 80;
+export const SKILL_LEVELS = {
+  knowledge: 'Knowledge only / studied the topic',
+  practice: 'Personal, academic or practice project',
+  professional: 'Professional experience',
+};
 
 const stopWords = new Set(`a an and are as at be been by can company candidate candidates career description do for from full have has in into is it job join looking must of on or our position preferred required requirements responsibility responsibilities role should team teams that the their this to us use using we will with work working you your years year experience including ability strong excellent knowledge skills skill other related relevant new minimum qualification qualifications develop build ensure support seeking would well about across all also such through within opportunity equal employer need needs able one two three day apply please benefits salary remote hybrid location based`.split(' '));
 const skills = ['React', 'JavaScript', 'TypeScript', 'Node.js', 'Python', 'Java', 'C++', 'C#', '.NET', 'SQL', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'HTML', 'CSS', 'Next.js', 'Vue', 'Angular', 'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Terraform', 'Git', 'GraphQL', 'REST', 'CI/CD', 'Agile', 'Scrum', 'Figma', 'Excel', 'Power BI', 'Tableau', 'Salesforce', 'SAP', 'SEO', 'Google Analytics', 'project management', 'stakeholder management', 'customer service', 'data analysis', 'machine learning', 'communication', 'leadership', 'accessibility', 'testing', 'Jest', 'Playwright', 'budgeting', 'accounting', 'marketing', 'sales', 'recruitment'];
@@ -31,7 +36,33 @@ export function extractKeywords(jobDescription, requirements = '') {
   }
   // ponytail: literal English term matching; use AI review for semantic requirements and other languages.
   const frequent = [...counts].sort((a, b) => b[1] - a[1]).slice(0, Math.max(5, 18 - known.length)).map(([word]) => word);
-  return [...new Set([...explicit, ...known, ...frequent].map(normalize))].slice(0, 40).map(term => ({ term, required: explicit.some(s => normalize(s) === term) || contains(requirements, term) }));
+  return [...new Set([...explicit, ...known, ...frequent].map(normalize))].slice(0, 40).map(term => ({ term, required: explicit.some(s => normalize(s) === term) || contains(requirements, term), isSkill: known.some(skill => normalize(skill) === term) || explicit.some(s => normalize(s) === term) }));
+}
+
+export function getSkillQuestions(resume, jobDescription, requirements = '') {
+  return extractKeywords(jobDescription, requirements)
+    .filter(item => item.isSkill && !contains(resume, item.term))
+    .map(item => ({ skill: item.term, label: skills.find(skill => normalize(skill) === item.term) || item.term, required: item.required }));
+}
+
+export function validateSkillConfirmations(value = [], resume, jobDescription, requirements = '') {
+  if (!Array.isArray(value) || value.length > 40) throw new Error('Skill confirmations must be a list of at most 40 answers.');
+  if (!value.length) return [];
+  const questions = getSkillQuestions(resume, jobDescription, requirements);
+  const seen = new Set();
+  let totalLength = 0;
+  return value.map(answer => {
+    if (!answer || typeof answer.skill !== 'string' || answer.skill.length > 80) throw new Error('Each skill answer must name a skill from the current job review.');
+    const skill = normalize(answer.skill);
+    const question = questions.find(item => item.skill === skill);
+    if (!question || seen.has(skill)) throw new Error('Skill answers must be unique missing skills from the current job review. Review your answers after changing inputs.');
+    if (typeof answer.level !== 'string' || !Object.hasOwn(SKILL_LEVELS, answer.level) || answer.confirmed !== true) throw new Error('Choose an experience level and explicitly confirm each skill statement.');
+    if (typeof answer.details !== 'string' || answer.details.trim().length < 20 || answer.details.length > 1000) throw new Error('Describe each confirmed skill in 20–1,000 characters, including an example and your actual level.');
+    totalLength += answer.details.length;
+    if (totalLength > 8000) throw new Error('Keep all skill examples together within 8,000 characters.');
+    seen.add(skill);
+    return { skill, level: answer.level, details: answer.details.trim(), confirmed: true };
+  });
 }
 
 export function analyze(resume, jobDescription, requirements = '') {

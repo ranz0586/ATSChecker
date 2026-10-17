@@ -58,6 +58,16 @@ These are transparent heuristics, not a company ATS simulator, pass probability,
 
 Local cleanup standardizes recognized headings, bullet characters, and whitespace without inserting missing skills or achievements. AI is instructed to preserve factual information, identify unsupported requirements, and avoid inventing qualifications. Users can edit the revision, rerun the local score, and download a single-column DOCX or TXT resume. Original and revised scores use the same job description.
 
+## Confirm missing skills before AI rewriting
+
+With valid resume/job text and **Include AI review** enabled, the app asks about recognised job skills and explicit must-haves that are absent from the resume. Automatic questions use the existing English skill vocabulary; put a specialist skill in **Must-have requirements** if it is not detected. Generic frequent job words do not become skill questions. An unanswered or **No / not sure** answer adds no supporting claim.
+
+For a positive answer, choose **Knowledge only**, **Personal, academic or practice project**, or **Professional experience**. Describe a concrete example and its limits in 20–1,000 characters, then confirm that the statement accurately describes your own experience. Combined examples are limited to 8,000 characters. Changing the resume, job or must-haves clears these answers to prevent stale claims; editing a statement requires confirming it again. Failed requests preserve the current inputs and answers.
+
+The consent text includes these statements before sending them to the selected AI provider. AI may use candidate-confirmed evidence in the revision while preserving the reported level: study is not hands-on work, a personal project is not employment, and familiarity does not prove a professional-experience or credential requirement. Answers are untrusted data, never instructions. The server rejects unsupported, duplicate, unconfirmed, oversized or stale answers before any provider request. Statements are self-reported, not independently verified; prompts cannot guarantee truthful output, so review every addition in the editable draft before exporting.
+
+The original resume and original fit/compatibility evaluations stay unchanged. The revised local score uses the actual revised text against the same job and requirements. A qualified knowledge statement can increase literal keyword alignment without proving that an employer's experience requirement is met. Local-only checks and AI failure fallback do not insert any additional skill statements. Answers stay in memory and are not saved or logged.
+
 ## Country formatting and revised scores
 
 Choose **Job country / resume format** before analyzing. The default suggests a country only when the job description contains exactly one supported country's full name. Multiple countries, abbreviations, city-only locations and unsupported countries fall back to International / other; select the job's actual country manually. A mention may refer to a headquarters rather than the job location, so verify the suggestion. Changing this selection invalidates the previous report.

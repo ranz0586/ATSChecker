@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowDownToLine, ArrowRight, ArrowUpRight, Check, CheckCheck, ChevronRight, CircleHelp, FileCheck2, FileText, Fingerprint, Layers3, LoaderCircle, Plus, RotateCcw, ScanLine, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
-import { analyze, MAX_TEXT } from '../shared/analysis.js';
+import { analyze, getSkillQuestions, validateSkillConfirmations, SKILL_LEVELS, MAX_TEXT } from '../shared/analysis.js';
 import { RESUME_FORMATS, detectJobCountry } from '../shared/resume-format.js';
 import './styles.css';
 
@@ -76,6 +76,7 @@ function App() {
   const detectedCountry = detectJobCountry(job);
   const [requirements, setRequirements] = useState('');
   const [resume, setResume] = useState('');
+  const [skillAnswers, setSkillAnswers] = useState({});
   const [filename, setFilename] = useState('');
   const [pages, setPages] = useState(null);
   const [result, setResult] = useState(null);
@@ -99,9 +100,9 @@ function App() {
   useEffect(() => { request('/api/config').then(setAIConfig).catch(() => setConfigError(true)); }, []);
   useEffect(() => { if (help) helpRef.current?.showModal(); else helpRef.current?.close(); }, [help]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 6000); return () => clearTimeout(timer); }, [notice]);
-  function invalidate() { setResult(null); setContext(null); setRevised(''); setError(''); setNotice(''); }
-  function loadExample() { invalidate(); setJob(sampleJob); setRequirements('React\nTypeScript\nAccessibility'); setResume(sampleResume); setFilename('Example resume'); setPages(null); setShowResume(false); }
-  function reset() { invalidate(); setJob(''); setRequirements(''); setResume(''); setFilename(''); setPages(null); setShowResume(false); setUseAI(false); setTargetCountry('auto'); setTab('overview'); if (fileRef.current) fileRef.current.value = ''; }
+  function invalidate(clearSkills = false) { if (clearSkills) setSkillAnswers({}); setResult(null); setContext(null); setRevised(''); setError(''); setNotice(''); }
+  function loadExample() { invalidate(true); setJob(sampleJob); setRequirements('React\nTypeScript\nAccessibility'); setResume(sampleResume); setFilename('Example resume'); setPages(null); setShowResume(false); }
+  function reset() { invalidate(true); setJob(''); setRequirements(''); setResume(''); setFilename(''); setPages(null); setShowResume(false); setUseAI(false); setTargetCountry('auto'); setTab('overview'); if (fileRef.current) fileRef.current.value = ''; }
   async function upload(file) {
     if (!file || busy) return;
     setError(''); setNotice('');
@@ -110,14 +111,19 @@ function App() {
     setBusy('upload');
     try {
       const data = await request('/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
-      invalidate(); setResume(data.text); setFilename(file.name); setPages(data.pages); setShowResume(true);
+      invalidate(true); setResume(data.text); setFilename(file.name); setPages(data.pages); setShowResume(true);
     } catch (err) { setError(err.message); }
     finally { setBusy(''); if (fileRef.current) fileRef.current.value = ''; }
+  }
+  function updateSkillAnswer(skill, field, value) {
+    invalidate();
+    setSkillAnswers(previous => ({ ...previous, [skill]: { ...previous[skill], [field]: value, ...(field === 'confirmed' ? {} : { confirmed: false }) } }));
   }
   async function runAnalysis(event) {
     event.preventDefault(); setError(''); setNotice(''); setBusy('analyze');
     try {
-      const data = await request('/api/analyze', jsonOptions({ resume, jobDescription: job, requirements, targetCountry, useAI, aiConsent: useAI, aiProvider: aiConfig.aiProvider }));
+      const skillConfirmations = useAI ? validateSkillConfirmations(skillQuestions.filter(question => Object.hasOwn(SKILL_LEVELS, skillAnswers[question.skill]?.level || '')).map(question => ({ skill: question.skill, ...skillAnswers[question.skill] })), resume, job, requirements) : [];
+      const data = await request('/api/analyze', jsonOptions({ resume, jobDescription: job, requirements, targetCountry, skillConfirmations, useAI, aiConsent: useAI, aiProvider: aiConfig.aiProvider }));
       setResult(data); setRevised(data.revisedResume); setContext({ job, requirements }); setTab('overview');
       setTimeout(() => reportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     } catch (err) { setError(err.message); }
@@ -140,6 +146,7 @@ function App() {
     finally { setBusy(''); }
   }
   const ready = job.trim().length >= 80 && resume.trim().length >= 80;
+  const skillQuestions = ready ? getSkillQuestions(resume, job, requirements) : [];
   const report = result?.original;
   const edited = result && revised !== result.revisedResume;
 
@@ -161,10 +168,10 @@ function App() {
           <form className="input-panel" onSubmit={runAnalysis}>
             <section className="input-section"><div className="section-title"><span className="section-icon"><FileText size={19} /></span><div><h2>The opportunity</h2><p>What does your next role look like?</p></div><span className="section-number">01</span></div>
               <label htmlFor="job-description">Job description <span className="required">*</span></label>
-              <textarea id="job-description" className="job-input" placeholder={'Paste the job description here…\n\nInclude responsibilities, qualifications, and the skills the company is looking for.'} value={job} onChange={e => { invalidate(); setJob(e.target.value); }} maxLength={MAX_TEXT} disabled={!!busy} required minLength={80} />
+              <textarea id="job-description" className="job-input" placeholder={'Paste the job description here…\n\nInclude responsibilities, qualifications, and the skills the company is looking for.'} value={job} onChange={e => { invalidate(true); setJob(e.target.value); }} maxLength={MAX_TEXT} disabled={!!busy} required minLength={80} />
               <div className="field-foot"><span>More detail makes a better comparison.</span><span>{job.length.toLocaleString()} / 30,000</span></div>
               <label htmlFor="requirements" className="requirements-label">Must-have requirements <span className="optional">Optional</span></label>
-              <textarea id="requirements" className="requirements-input" placeholder="e.g. React, project management, SQL — one per line" value={requirements} maxLength={5000} onChange={e => { invalidate(); setRequirements(e.target.value); }} disabled={!!busy} />
+              <textarea id="requirements" className="requirements-input" placeholder="e.g. React, project management, SQL — one per line" value={requirements} maxLength={5000} onChange={e => { invalidate(true); setRequirements(e.target.value); }} disabled={!!busy} />
               <p className="field-hint">These receive extra weight in the keyword check.</p>
               <label htmlFor="target-country" className="requirements-label">Job country / resume format</label>
               <select id="target-country" className="country-select" value={targetCountry} disabled={!!busy} onChange={e => { invalidate(); setTargetCountry(e.target.value); }} aria-describedby="country-hint"><option value="auto">Suggest from job description</option>{Object.entries(RESUME_FORMATS).map(([code, format]) => <option key={code} value={code}>{format.label} ({format.paper})</option>)}</select>
@@ -177,10 +184,19 @@ function App() {
                 <strong>{busy === 'upload' ? 'Reading your resume…' : filename || 'Drop your resume here'}</strong><span>{filename ? `${pages ? `${pages} page${pages > 1 ? 's' : ''} · ` : ''}${resume.trim().split(/\s+/).length} words · Click to replace` : <>or <em>browse files</em> to upload</>}</span><small>PDF, DOCX, or TXT · Up to 5 MB</small>
               </button>
               <div className="paste-divider"><i /><button type="button" onClick={() => setShowResume(!showResume)} disabled={!!busy}>{showResume ? 'Hide resume text' : resume ? 'Review extracted text' : 'or paste your resume'} <Plus size={13} /></button><i /></div>
-              {(showResume || (resume && !filename)) && <><label htmlFor="resume-text">Resume text <span className="required">*</span></label><textarea id="resume-text" className="resume-input" placeholder="Paste your full resume, including contact details, experience, skills, and education…" value={resume} onChange={e => { invalidate(); setResume(e.target.value); setFilename(''); setPages(null); }} maxLength={MAX_TEXT} disabled={!!busy} /><div className="field-foot"><span>Review the text before analyzing.</span><span>{resume.length.toLocaleString()} / 30,000</span></div></>}
+              {(showResume || (resume && !filename)) && <><label htmlFor="resume-text">Resume text <span className="required">*</span></label><textarea id="resume-text" className="resume-input" placeholder="Paste your full resume, including contact details, experience, skills, and education…" value={resume} onChange={e => { invalidate(true); setResume(e.target.value); setFilename(''); setPages(null); }} maxLength={MAX_TEXT} disabled={!!busy} /><div className="field-foot"><span>Review the text before analyzing.</span><span>{resume.length.toLocaleString()} / 30,000</span></div></>}
             </section>
+            {ready && useAI && skillQuestions.length > 0 && <section className="input-section skill-review" aria-labelledby="skill-review-title">
+              <h2 id="skill-review-title">Check skills missing from your resume</h2>
+              <p className="skill-intro">The job mentions these skills or requirements. Have you studied or used any of them? Leave unanswered or choose No / not sure to exclude them. These are self-reported statements, not independently verified credentials.</p>
+              {skillQuestions.map((question, index) => { const answer = skillAnswers[question.skill] || {}; const positive = Object.hasOwn(SKILL_LEVELS, answer.level || ''); return <fieldset className="skill-question" key={question.skill} disabled={!!busy}><legend>{question.label}{question.required && <span className="optional">Must-have you listed</span>}</legend>
+                <label htmlFor={'skill-level-' + index}>Your experience level</label><select id={'skill-level-' + index} className="country-select" value={answer.level || ''} onChange={e => updateSkillAnswer(question.skill, 'level', e.target.value)}><option value="">Not answered - do not add</option><option value="none">No / not sure - do not add</option>{Object.entries(SKILL_LEVELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                {positive && <><label htmlFor={'skill-details-' + index} className="requirements-label">Your example and limits</label><textarea id={'skill-details-' + index} value={answer.details || ''} onChange={e => updateSkillAnswer(question.skill, 'details', e.target.value)} minLength={20} maxLength={1000} required placeholder="What did you learn or do, and in what context? For example: studied TypeScript and built a small personal app; no commercial experience." aria-describedby={'skill-hint-' + index} /><p id={'skill-hint-' + index} className="field-hint">20-1,000 characters. State whether this was study, practice or actual work. All examples together: 8,000 characters maximum.</p><label className="skill-confirmation" htmlFor={'skill-confirm-' + index}><input id={'skill-confirm-' + index} type="checkbox" checked={answer.confirmed === true} required onChange={e => updateSkillAnswer(question.skill, 'confirmed', e.target.checked)} /><span>I confirm this describes my own experience accurately.</span></label></>}
+              </fieldset>; })}
+              <p className="field-hint">AI may add only confirmed statements at the level you describe. Review the revised draft before exporting. Your original resume stays unchanged.</p>
+            </section>}
             <div className="analysis-action"><div className="ai-toggle"><span className="ai-symbol"><Sparkles size={19} /></span><div><label htmlFor="use-ai">Include AI review <span className="ai-badge">DEEPER INSIGHTS</span></label><p>{aiAvailable ? 'Review with ' + aiConfig.aiProviderLabel : configError ? 'Server unavailable. Try restarting the app.' : aiConfig.aiConfigError || 'Enable with a server API key.'}</p></div><input id="use-ai" type="checkbox" role="switch" checked={useAI} onChange={e => setUseAI(e.target.checked)} disabled={!aiAvailable || !!busy} /></div>
-              {useAI && <p className="consent-note">By enabling AI review, you agree to send your resume, job description, and requirements to {aiConfig.aiProviderLabel}. Review personal details before continuing.</p>}
+              {useAI && <p className="consent-note">By enabling AI review, you agree to send your resume, job description, requirements, and any confirmed skill examples to {aiConfig.aiProviderLabel}. Review personal details before continuing.</p>}
               <button className="button primary analyze-button" type="submit" disabled={!ready || !!busy}>{busy === 'analyze' ? <><LoaderCircle size={18} className="spin" /> {useAI ? 'Reviewing & refining…' : 'Checking your match…'}</> : <><ScanLine size={18} /> Analyze my resume <ArrowRight size={18} /></>}</button>
               <p className="privacy-caption"><ShieldCheck size={13} /> Processed in memory. Never saved by this app.</p>
             </div>
@@ -197,6 +213,7 @@ function App() {
                   <div className="report-section-title"><h3>Small changes. Meaningful impact.</h3><span>{report.suggestions.length} suggestions</span></div>
                   <div className="suggestions">{report.suggestions.length ? report.suggestions.map((suggestion, index) => <div key={suggestion}><span>{String(index + 1).padStart(2, '0')}</span><p>{suggestion}</p></div>) : <p className="success-note"><Check size={18} /> All local checks passed. Review the role’s substantive requirements before applying.</p>}</div>
                   <div className="report-section-title"><h3>Resume text checks</h3><span>{report.wordCount} words</span></div><div className="checks">{report.checks.map(check => <div key={check.name} title={check.detail}><span className={check.pass ? 'check-pass' : 'check-fail'}>{check.pass ? <Check size={14} /> : <span>!</span>}</span>{check.name}</div>)}</div>
+                  {result.confirmedSkillCount > 0 && <div className="local-note"><ShieldCheck size={17} /><p><strong>{result.confirmedSkillCount} candidate-confirmed skill statement(s) supplied to AI.</strong> These are self-reported. Check every addition and ensure knowledge or practice has not become a claim of professional experience.</p></div>}
                   {result.aiError && <div className="inline-error" role="alert">{result.aiError} The report and cleanup below use local checks.</div>}
                   {result.ai ? <div className="ai-review"><div className="ai-review-heading"><Sparkles size={19} /><h3>{result.aiProviderLabel || 'AI'} perspective</h3><span>{result.ai.fitScore}/100 original fit estimate</span></div><p>{result.ai.summary}</p>{[['Evidence-backed strengths', result.ai.strengths], ['Requirements to address', result.ai.gaps], ['Recommended next steps', result.ai.recommendations], ['Review before applying', result.ai.cautions]].map(([title, items]) => items.length > 0 && <div key={title}><h4>{title}</h4><ul>{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>)}</div> : !result.aiError && <div className="local-note"><Sparkles size={17} /><p><strong>Local review completed.</strong> Enable AI review for semantic fit and a tailored rewrite. Local cleanup standardizes text formatting.</p></div>}
                   <button className="button primary refine-button" onClick={() => setTab('resume')}>Review refined resume <ArrowRight size={16} /></button>

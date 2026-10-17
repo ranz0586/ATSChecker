@@ -2,7 +2,7 @@ import express from 'express';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze, cleanResume, validateInputs, MAX_TEXT } from '../shared/analysis.js';
+import { analyze, cleanResume, validateInputs, validateSkillConfirmations, MAX_TEXT } from '../shared/analysis.js';
 import { extractResume, createDocx } from './files.js';
 import { reviewWithAI, getAIConfig } from './ai.js';
 import { resolveResumeCountry } from '../shared/resume-format.js';
@@ -33,9 +33,10 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   let aiRequests = 0;
   let aiWindowStart = Date.now();
   app.post('/api/analyze', async (req, res) => {
-    const { resume, jobDescription, requirements = '', targetCountry = 'auto', useAI = false, aiConsent = false, aiProvider } = req.body || {};
+    const { resume, jobDescription, requirements = '', targetCountry = 'auto', skillConfirmations = [], useAI = false, aiConsent = false, aiProvider } = req.body || {};
     let country;
-    try { validateInputs(resume, jobDescription, requirements); country = resolveResumeCountry(targetCountry, jobDescription); }
+    let confirmedSkills;
+    try { validateInputs(resume, jobDescription, requirements); country = resolveResumeCountry(targetCountry, jobDescription); confirmedSkills = validateSkillConfirmations(skillConfirmations, resume, jobDescription, requirements); }
     catch (error) { return res.status(400).json({ error: error.message }); }
     if (typeof useAI !== 'boolean' || typeof aiConsent !== 'boolean') return res.status(400).json({ error: 'AI options must be true or false.' });
     if (useAI && !aiConsent) return res.status(400).json({ error: 'Consent is required before sending your documents for AI review.' });
@@ -54,12 +55,12 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
     if (useAI) {
       // ponytail: one AI request at a time on this local server; add per-user quotas when deploying for multiple users.
       aiBusy = true;
-      try { ai = await reviewWithAI({ resume, jobDescription, requirements, targetCountry: country }, { ...aiConfig, fetchImpl }); }
+      try { ai = await reviewWithAI({ resume, jobDescription, requirements, targetCountry: country, skillConfirmations: confirmedSkills }, { ...aiConfig, fetchImpl }); }
       catch (error) { aiError = error.name === 'TimeoutError' ? 'AI review timed out. Local results are still available.' : error.message; }
       finally { aiBusy = false; }
     }
     const revisedResume = ai?.revisedResume || cleanResume(resume);
-    res.json({ original, revised: analyze(revisedResume, jobDescription, requirements), revisedResume, ai, aiError, targetCountry: country,
+    res.json({ original, revised: analyze(revisedResume, jobDescription, requirements), revisedResume, ai, aiError, targetCountry: country, confirmedSkillCount: ai ? confirmedSkills.length : 0,
       aiProvider: ai ? aiConfig.provider : null, aiProviderLabel: ai ? aiConfig.label : null,
       changes: ai?.changes || ['Standardized recognized section headings, bullets, and whitespace. Original qualifications and accomplishments were preserved.'],
     });

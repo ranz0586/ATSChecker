@@ -4,3 +4,4 @@ dist/
 .npm-cache/
 test-results/
 .tools/
+graphify-out/

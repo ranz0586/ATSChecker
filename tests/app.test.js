@@ -99,6 +99,7 @@ test('uploads reject unsupported, malformed, oversized, scanned and binary docum
   await assert.rejects(() => extractResume(Buffer.alloc(6 * 1024 * 1024), 'resume.txt'), /5 MB/);
   await assert.rejects(() => extractResume(Buffer.from('short'), 'resume.txt'), /readable text/);
   await assert.rejects(() => extractResume(Buffer.from(`${resume}\u0000`), 'resume.txt'), /UTF-8/);
+  await assert.rejects(() => extractResume(Buffer.from([0xff, 0xfe, ...Buffer.from(resume)]), 'resume.txt'), /Upload a UTF-8 text resume/);
   const zip = new JSZip();
   zip.file('word/document.xml', 'a'.repeat(21 * 1024 * 1024));
   await assert.rejects(() => zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }).then(buffer => extractResume(buffer, 'compressed.docx')), /safety limit/);

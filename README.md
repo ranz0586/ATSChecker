@@ -1,6 +1,6 @@
 # Align — ATS resume checker
 
-A React application for comparing a resume with a job description, reviewing ATS text compatibility, and downloading an improved resume. PDF, DOCX, and UTF-8 TXT uploads are supported, along with pasted text.
+A React application for comparing a resume with a job description, reviewing ATS text compatibility, and downloading an improved resume. PDF, DOCX, and UTF-8 TXT uploads are supported, along with pasted text. TXT files with invalid UTF-8 bytes are rejected with a specific encoding message.
 
 ## Run
 

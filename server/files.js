@@ -35,7 +35,8 @@ export async function extractResume(buffer, filename) {
     }
     text = (await mammoth.extractRawText({ buffer })).value;
   } else if (extension === 'txt') {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
+    catch { throw new Error('Upload a UTF-8 text resume.'); }
     if (text.includes('\u0000')) throw new Error('Upload a UTF-8 text resume.');
   } else throw new Error('Upload a PDF, DOCX, or UTF-8 TXT file.');
   text = text.trim();

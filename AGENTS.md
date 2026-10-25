@@ -2,6 +2,10 @@
 
 Align is a local React application that compares a resume with a job description, reports ATS text compatibility, and exports a revised resume. Optional OpenAI or Gemini evaluation adds semantic fit review and a tailored rewrite. Read `README.md` for setup and product limitations.
 
+## KOS Graphify route
+
+For a substantive ATSChecker code or project-decision question, when `D:\Ranz Knowledge OS` is available, run `powershell -NoProfile -File "D:\Ranz Knowledge OS\00 - System\Automations\Invoke-ATSCheckerGraph.ps1" -Question "<specific question>"` before broad source search. This is read-only: it checks graph freshness, returns bounded KOS note excerpts and Graphify code relationships, and verifies explicit source references. Read the relevant canonical note and source before acting. If the graph is stale, run `python "D:\Ranz Knowledge OS\00 - System\Automations\kos_graphify.py" refresh --project ATSChecker` separately after the work; if unavailable, use repository source and report the limitation. After meaningful work, update the KOS project handoff and draft decisions or lessons, following KOS approval rules. Never index resumes, job descriptions, credentials, or generated files.
+
 ## Structure
 
 | Path | Responsibility |

@@ -4,7 +4,17 @@ Align is a local React application that compares a resume with a job description
 
 ## KOS Graphify route
 
-For a substantive ATSChecker code or project-decision question, when `D:\Ranz Knowledge OS` is available, run `powershell -NoProfile -File "D:\Ranz Knowledge OS\00 - System\Automations\Invoke-ATSCheckerGraph.ps1" -Question "<specific question>"` before broad source search. This is read-only: it checks graph freshness, returns bounded KOS note excerpts and Graphify code relationships, and verifies explicit source references. Read the relevant canonical note and source before acting. If the graph is stale, run `python "D:\Ranz Knowledge OS\00 - System\Automations\kos_graphify.py" refresh --project ATSChecker` separately after the work; if unavailable, use repository source and report the limitation. After meaningful work, update the KOS project handoff and draft decisions or lessons, following KOS approval rules. Never index resumes, job descriptions, credentials, or generated files.
+Read `D:\Ranz Knowledge OS\AGENTS.md` and `D:\Ranz Knowledge OS\02 - Projects\Active\ATSChecker\PROJECT-CONTEXT.md` for active project work. Resume from `D:\Ranz Knowledge OS\02 - Projects\Active\ATSChecker\handoff.md`. KOS holds project notes and decisions; repository files are the code authority.
+
+Before broad source search for code, architecture, or decisions, run `python "D:\Ranz Knowledge OS\00 - System\Automations\kos_graphify.py" query --project "ATSChecker" --question "<specific question>"`. Verify important graph leads and explicit source references in repository files; stale graphs are unavailable.
+
+After code or Graphify configuration changes, use the same script to run `refresh --project "ATSChecker"`, then separately `status --project "ATSChecker"`. Changed KOS notes are read directly and need no re-index.
+
+After meaningful work, refresh the KOS handoff with current status, blockers, next action, and actual checks. Draft decisions or durable facts await approval before promotion. Keep older detail in linked dated history snapshots; do not create a second notes tree or load history automatically.
+
+Follow the KOS BrewedOps code workflow when relevant: meaningful failing check, implementation, code-structure where needed, scanloop, then local-panel greploop. Report incomplete checks. Local commits for completed code pieces are allowed after checks; pushes, publishing, remote configuration, and deployment require explicit user authorization. Use ship only for a requested deployment. If KOS is inaccessible, follow repository guidance and report the continuity gap.
+
+Never index resumes, job descriptions, credentials, or generated files.
 
 ## Structure
 

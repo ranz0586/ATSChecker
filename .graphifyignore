@@ -1,0 +1,10 @@
+# Keep historical, generated, private, and tool-owned files out of the project graph.
+/.history/
+/.npm-cache/
+/.tools/
+/dist/
+/test-results/
+/node_modules/
+/graphify-out/
+/.env*
+*.log
